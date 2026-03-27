@@ -204,32 +204,46 @@ def descargar_datos(tickers, indice, fecha_inicio, fecha_fin):
         st.error(f"Error descargando datos: {e}")
         return None, None, None, None
 
-def calcular_betas_cuantilicas(ret_stk, ret_idx, quantiles=[0.10,0.90]):
+def calcular_betas_cuantilicas(ret_stk, ret_idx, quantiles=[0.10, 0.90]):
     resultados = {}
     for ticker in ret_stk.columns:
         serie = ret_stk[ticker].dropna()
         idx_c = ret_idx.index.intersection(serie.index)
         if len(idx_c) < 100:
             continue
-        df_r = pd.DataFrame({
-            "r_accion": serie.loc[idx_c].values,
-            "r_ipc":    ret_idx.loc[idx_c].values
-        }).dropna()
+        y = serie.loc[idx_c].values
+        x = ret_idx.loc[idx_c].values
         betas_q = {}
         for q in quantiles:
             try:
-                m = smf.quantreg("r_accion ~ r_ipc", data=df_r).fit(q=q, max_iter=500)
-                betas_q[f"beta_q{int(q*100)}"] = m.params["r_ipc"]
+                # Beta cuantílica via OLS en subconjunto del quantil
+                threshold = np.quantile(x, q)
+                if q <= 0.5:
+                    mask = x <= threshold
+                else:
+                    mask = x >= threshold
+                if mask.sum() < 20:
+                    betas_q[f"beta_q{int(q*100)}"] = np.nan
+                    continue
+                x_q = x[mask]
+                y_q = y[mask]
+                # OLS simple
+                cov = np.cov(y_q, x_q)
+                beta = cov[0,1] / cov[1,1] if cov[1,1] != 0 else np.nan
+                betas_q[f"beta_q{int(q*100)}"] = beta
             except:
                 betas_q[f"beta_q{int(q*100)}"] = np.nan
         resultados[ticker] = betas_q
-    return pd.DataFrame(resultados).T
 
+    if not resultados:
+        return pd.DataFrame()
+    return pd.DataFrame(resultados).T
+    
 def calcular_scores(df_betas, ret_stk, ret_idx):
     scores = {}
-    for ticker in df_betas.index:
-        if ticker not in ret_stk.columns:
-            continue
+    # Iterar sobre todas las emisoras con datos, no solo las de df_betas
+    tickers = ret_stk.columns.tolist()
+    for ticker in tickers:
         serie = ret_stk[ticker].dropna()
         idx_c = ret_idx.index.intersection(serie.index)
         if len(idx_c) < 100:
@@ -240,13 +254,15 @@ def calcular_scores(df_betas, ret_stk, ret_idx):
         perdidas  = exceso[exceso < 0]
         b = ganancias.mean() / abs(perdidas.mean()) if len(perdidas) > 0 and len(ganancias) > 0 else 1.0
         f = max(0.03, (p * b - (1-p)) / b)
-        b10 = df_betas.loc[ticker, "beta_q10"] if "beta_q10" in df_betas.columns else 1.0
-        b90 = df_betas.loc[ticker, "beta_q90"] if "beta_q90" in df_betas.columns else 1.0
-        asimetria = float(b90 - b10) if not (np.isnan(b90) or np.isnan(b10)) else 0
+
+        b10 = float(df_betas.loc[ticker, "beta_q10"]) if (not df_betas.empty and ticker in df_betas.index and "beta_q10" in df_betas.columns) else 1.0
+        b90 = float(df_betas.loc[ticker, "beta_q90"]) if (not df_betas.empty and ticker in df_betas.index and "beta_q90" in df_betas.columns) else 1.0
+        asimetria = float(b90 - b10) if not (np.isnan(b90) or np.isnan(b10)) else 0.0
+
         scores[ticker] = {
-            "p_kelly": round(p, 3),
-            "b_kelly": round(b, 3),
-            "f_kelly": round(f, 4),
+            "p_kelly":   round(p, 3),
+            "b_kelly":   round(b, 3),
+            "f_kelly":   round(f, 4),
             "asimetria": round(asimetria, 3),
         }
     return pd.DataFrame(scores).T
