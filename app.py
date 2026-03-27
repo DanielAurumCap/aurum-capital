@@ -204,7 +204,7 @@ def descargar_datos(tickers, indice, fecha_inicio, fecha_fin):
         st.error(f"Error descargando datos: {e}")
         return None, None, None, None
 
-def calcular_betas_cuantilicas(ret_stk, ret_idx, quantiles=[0.10,0.25,0.75,0.90]):
+def calcular_betas_cuantilicas(ret_stk, ret_idx, quantiles=[0.10,0.90]):
     resultados = {}
     for ticker in ret_stk.columns:
         serie = ret_stk[ticker].dropna()
@@ -218,7 +218,7 @@ def calcular_betas_cuantilicas(ret_stk, ret_idx, quantiles=[0.10,0.25,0.75,0.90]
         betas_q = {}
         for q in quantiles:
             try:
-                m = smf.quantreg("r_accion ~ r_ipc", data=df_r).fit(q=q, max_iter=1000)
+                m = smf.quantreg("r_accion ~ r_ipc", data=df_r).fit(q=q, max_iter=500)
                 betas_q[f"beta_q{int(q*100)}"] = m.params["r_ipc"]
             except:
                 betas_q[f"beta_q{int(q*100)}"] = np.nan
@@ -239,7 +239,7 @@ def calcular_scores(df_betas, ret_stk, ret_idx):
         ganancias = exceso[exceso > 0]
         perdidas  = exceso[exceso < 0]
         b = ganancias.mean() / abs(perdidas.mean()) if len(perdidas) > 0 and len(ganancias) > 0 else 1.0
-        f = max(0, (p * b - (1-p)) / b)
+        f = max(0.03, (p * b - (1-p)) / b)
         b10 = df_betas.loc[ticker, "beta_q10"] if "beta_q10" in df_betas.columns else 1.0
         b90 = df_betas.loc[ticker, "beta_q90"] if "beta_q90" in df_betas.columns else 1.0
         asimetria = float(b90 - b10) if not (np.isnan(b90) or np.isnan(b10)) else 0
@@ -494,7 +494,7 @@ with st.sidebar:
 
     # Rf slider 0% a 20% con default según universo
     rf_default = float(config_u["rf_default"])
-    rf = st.slider(t["rf"], 0.0, 0.20, rf_default, 0.001, format="%.1f%%")
+    rf = st.slider(t["rf"], 0.0, 0.20, rf_default, 0.005, format="%.2f%%")
 
     st.markdown("---")
     st.markdown(f'<div style="font-family:IBM Plex Mono;font-size:8px;color:#2a3a2e;letter-spacing:0.1em;">v2.2.0 · Quantile-Kelly Model</div>', unsafe_allow_html=True)
