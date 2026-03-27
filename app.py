@@ -494,7 +494,8 @@ with st.sidebar:
 
     # Rf slider 0% a 20% con default según universo
     rf_default = float(config_u["rf_default"])
-    rf = st.slider(t["rf"], 0.0, 0.20, rf_default, 0.005, format="%.2f%%")
+    rf_pct = st.slider(t["rf"], 0.0, 20.0, rf_default * 100, 0.5, format="%.1f%%")
+    rf = rf_pct / 100
 
     st.markdown("---")
     st.markdown(f'<div style="font-family:IBM Plex Mono;font-size:8px;color:#2a3a2e;letter-spacing:0.1em;">v2.2.0 · Quantile-Kelly Model</div>', unsafe_allow_html=True)
@@ -539,6 +540,10 @@ if pagina == t["monitor"]:
 
             prog.progress(50, text=t["optimizando"])
             pesos_s, _ = optimizar_kelly(scores, ret_stk)
+
+            st.write(f"Emisoras con datos: {ret_stk.shape[1]}")
+            st.write(f"Scores calculados: {len(scores)}")
+            st.write(f"Pesos generados: {len(pesos_s)}")
 
             # Inicializar variables
             serie_port = None
